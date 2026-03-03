@@ -61,6 +61,7 @@ php artisan storage:link
 ## Guía Ubuntu Server
 - Consulta [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md) para pasos completos en Ubuntu (paquetes, DB, Nginx, PHP-FPM, permisos, cron/queues y verificación).
 - Consulta [DEPLOY_MANUAL.md](DEPLOY_MANUAL.md) si harás el despliegue manual (git clone/pull + composer/npm + migraciones, sin CI/SSH).
+- Consulta [DB_SETUP.md](DB_SETUP.md) para la creación rápida de la base de datos y usuario MySQL.
 
 ## Despliegue rápido (producción)
 1) Dependencias y build (en el servidor o CI):
