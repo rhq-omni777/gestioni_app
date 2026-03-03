@@ -59,7 +59,8 @@ php artisan storage:link
 - Deploy opcional a servidor Ubuntu por SSH en `.github/workflows/deploy.yml` (requiere secrets: SERVER_HOST, SERVER_USER, SERVER_SSH_KEY, APP_URL, DB_PASS, DB_ROOT_PASSWORD).
 
 ## Guía Ubuntu Server
-Consulta [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md) para pasos completos en Ubuntu (paquetes, DB, Nginx, PHP-FPM, permisos, cron/queues y verificación).
+- Consulta [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md) para pasos completos en Ubuntu (paquetes, DB, Nginx, PHP-FPM, permisos, cron/queues y verificación).
+- Consulta [DEPLOY_MANUAL.md](DEPLOY_MANUAL.md) si harás el despliegue manual (git clone/pull + composer/npm + migraciones, sin CI/SSH).
 
 ## Despliegue rápido (producción)
 1) Dependencias y build (en el servidor o CI):
