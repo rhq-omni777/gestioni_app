@@ -1,0 +1,141 @@
+name: Deploy to Ubuntu Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Rama a desplegar"
+        required: true
+        default: "main"
+  push:
+    branches: [ main ]
+
+env:
+  APP_NAME: GESTIONI
+  APP_ENV: production
+  APP_DEBUG: false
+  APP_URL: ${{ secrets.APP_URL }}
+  DB_NAME: gestioni_laravel
+  DB_USER: gestioni
+  DB_PASS: ${{ secrets.DB_PASS }}
+  DB_HOST: localhost
+  TARGET_DIR: /var/www/gestioni_app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, bcmath, pdo_mysql, fileinfo
+          coverage: none
+
+      - name: Install PHP dependencies (no-dev)
+        run: composer install --no-interaction --no-progress --no-dev --optimize-autoloader
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Package artifact
+        run: |
+          tar -czf deploy.tar.gz \
+            --exclude=./storage/logs/* \
+            --exclude=./storage/framework/sessions/* \
+            --exclude=./storage/framework/cache/data/* \
+            --exclude=./storage/framework/views/* \
+            --exclude=./node_modules \
+            .
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "deploy.tar.gz"
+          target: "${{ env.TARGET_DIR }}/_tmp"
+
+      - name: Run remote setup
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            sudo mkdir -p ${{ env.TARGET_DIR }}
+            sudo mkdir -p ${{ env.TARGET_DIR }}/releases
+            sudo mkdir -p ${{ env.TARGET_DIR }}/shared/storage
+
+            # Descomprimir release
+            cd ${{ env.TARGET_DIR }}
+            RELEASE=$(date +%Y%m%d%H%M%S)
+            mkdir -p releases/$RELEASE
+            tar -xzf _tmp/deploy.tar.gz -C releases/$RELEASE
+
+            # Enlazar storage compartido
+            rm -rf releases/$RELEASE/storage
+            ln -s ${{ env.TARGET_DIR }}/shared/storage releases/$RELEASE/storage
+
+            # .env
+            if [ ! -f ${{ env.TARGET_DIR }}/shared/.env ]; then
+              cp releases/$RELEASE/.env.example ${{ env.TARGET_DIR }}/shared/.env
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/APP_ENV=.*/','APP_ENV=${{ env.APP_ENV }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/APP_DEBUG=.*/','APP_DEBUG=${{ env.APP_DEBUG }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/APP_NAME=.*/','APP_NAME=${{ env.APP_NAME }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/APP_URL=.*/','APP_URL=${{ env.APP_URL }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/DB_DATABASE=.*/','DB_DATABASE=${{ env.DB_NAME }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/DB_USERNAME=.*/','DB_USERNAME=${{ env.DB_USER }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/DB_PASSWORD=.*/','DB_PASSWORD=${{ env.DB_PASS }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/DB_HOST=.*/','DB_HOST=${{ env.DB_HOST }}', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+              php -r "file_put_contents('${{ env.TARGET_DIR }}/shared/.env', preg_replace('/FILESYSTEM_DISK=.*/','FILESYSTEM_DISK=public', file_get_contents('${{ env.TARGET_DIR }}/shared/.env')));"
+            fi
+
+            # Symlink .env
+            ln -sf ${{ env.TARGET_DIR }}/shared/.env releases/$RELEASE/.env
+
+            # Instalar dependencias en servidor (por si difiere libc/php)
+            cd releases/$RELEASE
+            composer install --no-interaction --no-progress --no-dev --optimize-autoloader
+            npm ci --ignore-scripts
+            npm run build
+
+            php artisan key:generate --force
+
+            # DB bootstrap
+            mysql -u root -p"${{ secrets.DB_ROOT_PASSWORD }}" -e "CREATE DATABASE IF NOT EXISTS ${{ env.DB_NAME }} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+            mysql -u root -p"${{ secrets.DB_ROOT_PASSWORD }}" -e "CREATE USER IF NOT EXISTS '${{ env.DB_USER }}'@'localhost' IDENTIFIED BY '${{ env.DB_PASS }}';"
+            mysql -u root -p"${{ secrets.DB_ROOT_PASSWORD }}" -e "GRANT ALL PRIVILEGES ON ${{ env.DB_NAME }}.* TO '${{ env.DB_USER }}'@'localhost'; FLUSH PRIVILEGES;"
+
+            php artisan migrate --force --seed
+            php artisan storage:link
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            # Permisos
+            sudo chown -R www-data:www-data ${{ env.TARGET_DIR }}/shared/storage
+            sudo chown -R www-data:www-data ${{ env.TARGET_DIR }}/releases/$RELEASE/bootstrap/cache
+            sudo find ${{ env.TARGET_DIR }}/shared/storage -type d -exec chmod 775 {} \;
+            sudo find ${{ env.TARGET_DIR }}/shared/storage -type f -exec chmod 664 {} \;
+
+            # Activar release
+            ln -sfn ${{ env.TARGET_DIR }}/releases/$RELEASE ${{ env.TARGET_DIR }}/current
+
+            # Reload PHP-FPM y Nginx
+            sudo systemctl reload php8.2-fpm || true
+            sudo systemctl reload nginx || true
+
+            # Limpiar tmp
+            rm -f ${{ env.TARGET_DIR }}/_tmp/deploy.tar.gz

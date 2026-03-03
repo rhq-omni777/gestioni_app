@@ -56,6 +56,7 @@ php artisan storage:link
 	- Instala PHP deps, copia `.env.example`, genera key, ajusta DB a gestioni_test.
 	- Corre migraciones, instala npm deps, build de assets y ejecuta `php artisan test`.
 	- Triggers en push/PR a main/master.
+- Deploy opcional a servidor Ubuntu por SSH en `.github/workflows/deploy.yml` (requiere secrets: SERVER_HOST, SERVER_USER, SERVER_SSH_KEY, APP_URL, DB_PASS, DB_ROOT_PASSWORD).
 
 ## Guía Ubuntu Server
 Consulta [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md) para pasos completos en Ubuntu (paquetes, DB, Nginx, PHP-FPM, permisos, cron/queues y verificación).
