@@ -57,6 +57,9 @@ php artisan storage:link
 	- Corre migraciones, instala npm deps, build de assets y ejecuta `php artisan test`.
 	- Triggers en push/PR a main/master.
 
+## Guía Ubuntu Server
+Consulta [DEPLOY_UBUNTU.md](DEPLOY_UBUNTU.md) para pasos completos en Ubuntu (paquetes, DB, Nginx, PHP-FPM, permisos, cron/queues y verificación).
+
 ## Despliegue rápido (producción)
 1) Dependencias y build (en el servidor o CI):
 ```
